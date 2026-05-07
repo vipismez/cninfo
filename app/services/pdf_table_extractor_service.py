@@ -15,6 +15,8 @@ from app.table_name_dictionary import TABLE_NAME_ALIASES
 
 @dataclass(slots=True)
 class ExtractionSummary:
+    """批量提取统计信息。"""
+
     total: int = 0
     processed: int = 0
     success: int = 0
@@ -25,6 +27,15 @@ class ExtractionSummary:
 
 
 class PdfTableExtractorService:
+    """PDF 表格提取服务。
+
+    流程概览：
+    1) 识别每页表格；
+    2) 基于表格上方文本推断标题；
+    3) 用字典别名归一到标准表名；
+    4) 仅导出命中字典的表格到 Excel。
+    """
+
     TITLE_KEYWORDS = (
         "关键指标",
         "资产负债表",
@@ -60,6 +71,8 @@ class PdfTableExtractorService:
         log: Callable[[str], None],
         progress: Callable[[int, int], None],
     ) -> ExtractionSummary:
+        """递归处理目录下全部 PDF，并通过回调上报日志与进度。"""
+
         summary = ExtractionSummary()
         pdf_files = sorted(
             [p for p in source_dir.rglob("*") if p.is_file() and p.suffix.lower() == ".pdf"],
@@ -102,6 +115,13 @@ class PdfTableExtractorService:
         return summary
 
     def _extract_one_pdf(self, pdf_path: Path, out_path: Path, stop_event: threading.Event) -> tuple[int, int]:
+        """提取单个 PDF。
+
+        返回值：
+        - 导出表格数
+        - 被过滤/跳过的表格数（未命中字典或数据无效）
+        """
+
         wb = Workbook()
         default_sheet = wb.active
         used_name_counts: dict[str, int] = {}
@@ -131,6 +151,7 @@ class PdfTableExtractorService:
                     title_guess = self._guess_title(lines, table.bbox[1], page_idx, table_idx)
                     canonical_title = self._canonicalize_title(title_guess)
                     if canonical_title is None:
+                        # 上方标题不可靠时，回退用表头内容再尝试一次字典匹配。
                         fallback = self._title_from_rows(rows)
                         canonical_title = self._canonicalize_title(fallback) if fallback else None
                     if canonical_title is None:
@@ -152,6 +173,11 @@ class PdfTableExtractorService:
         return table_count, skipped_tables
 
     def _extract_text_lines(self, page: pdfplumber.page.Page) -> list[tuple[float, str]]:
+        """提取页面文本行。
+
+        优先使用 pdfplumber 的文本行 API；失败时回退到单词聚合，增强兼容性。
+        """
+
         if hasattr(page, "extract_text_lines"):
             try:
                 rich_lines = page.extract_text_lines()
@@ -185,6 +211,8 @@ class PdfTableExtractorService:
         return lines
 
     def _guess_title(self, lines: list[tuple[float, str]], table_top: float, page_idx: int, table_idx: int) -> str:
+        """为表格推断标题。"""
+
         candidates = [(top, txt) for top, txt in lines if top < table_top and (table_top - top) <= 220]
         if not candidates:
             return f"Table_{page_idx}_{table_idx}"
@@ -207,6 +235,13 @@ class PdfTableExtractorService:
         return title
 
     def _score_title_candidate(self, text: str, top: float, table_top: float) -> float:
+        """标题候选评分。
+
+        规则目标：
+        - 提升章节/小节标题权重；
+        - 抑制单位行、表头行、纯数字行误命中。
+        """
+
         score = 0.0
         text = self._normalize_text(text)
         compact = re.sub(r"\s+", "", text)
@@ -250,6 +285,8 @@ class PdfTableExtractorService:
         return normalized.strip()
 
     def _canonicalize_title(self, title: str) -> str | None:
+        """将原始标题归一为字典中的标准表名；未命中返回 None。"""
+
         text = self._normalize_text(title)
         for alias, canonical in self._alias_pairs:
             if alias and alias in text:
@@ -257,6 +294,8 @@ class PdfTableExtractorService:
         return None
 
     def _title_from_rows(self, rows: list[list[str]]) -> str:
+        """从前两行表头拼接回退标题。"""
+
         head = " ".join(" ".join(r) for r in rows[:2])
         return self._normalize_text(head)
 

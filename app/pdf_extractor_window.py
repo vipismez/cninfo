@@ -13,6 +13,8 @@ from app.services.pdf_table_extractor_service import ExtractionSummary, PdfTable
 
 
 class PdfExtractorWindow:
+    """PDF 表格提取独立窗口。"""
+
     def __init__(self, parent: tk.Tk) -> None:
         self.parent = parent
         self.window = tk.Toplevel(parent)
@@ -32,6 +34,8 @@ class PdfExtractorWindow:
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def _build_ui(self) -> None:
+        """构建目录配置、控制按钮与滚动日志区域。"""
+
         root = ttk.Frame(self.window, padding=12)
         root.pack(fill=tk.BOTH, expand=True)
         root.columnconfigure(0, weight=1)
@@ -95,6 +99,8 @@ class PdfExtractorWindow:
         self.log_text.configure(state=tk.DISABLED)
 
     def start_extract(self) -> None:
+        """启动后台提取任务，避免阻塞 UI 线程。"""
+
         if self._worker and self._worker.is_alive():
             messagebox.showinfo("提示", "任务正在执行中")
             return
@@ -125,6 +131,8 @@ class PdfExtractorWindow:
         self._worker.start()
 
     def stop_extract(self) -> None:
+        """请求软停止：当前文件结束后退出。"""
+
         self._stop_event.set()
         self._log("已请求停止，正在等待当前文件处理结束...")
 
@@ -133,6 +141,8 @@ class PdfExtractorWindow:
         self.stop_btn.configure(state=tk.NORMAL if running else tk.DISABLED)
 
     def _thread_log(self, msg: str) -> None:
+        """将后台日志安全回投到 UI 线程。"""
+
         self.window.after(0, lambda: self._log(msg))
 
     def _thread_progress(self, done: int, total: int) -> None:
